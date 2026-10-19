@@ -694,7 +694,7 @@ function generateSignal(tfCandles, allTf) {
   if (struct.bos?.type === 'bullish') { buyScore += 2; reasons.push('BOS bull'); bullPatterns.push('BOS'); }
   if (struct.bos?.type === 'bearish') { sellScore += 2; reasons.push('BOS bear'); bullPatterns.push('BOS'); }
   if (struct.choch?.type === 'bullish') { buyScore += 3; reasons.push('CHOCH bull'); bullPatterns.push('CHOCH'); }
-  if (struct.choch?.type === 'bearish') { sellScore += 3; reasons.push('CHOCH bear'); bearPatterns.push('CHOCH'); }
+  if (struct.choch?.type === 'bearish') { sellScore += 3; reasons.push('CHOCH bear'); bullPatterns.push('CHOCH'); }
 
   const recentOB = obs.filter(o => o.idx > tfCandles.length - 20);
   const bullOB = recentOB.filter(o => o.type === 'bullish' && price >= o.bottom && price <= o.top + atr*1.5);
@@ -707,9 +707,9 @@ function generateSignal(tfCandles, allTf) {
   if (recentFVG.some(f => f.type === 'bearish' && price >= f.bottom && price <= f.top)) { sellScore += 1; bearPatterns.push('FVG'); }
 
   if (eng.some(p => p.type === 'bullish' && p.idx > tfCandles.length - 3)) { buyScore += 2; bullPatterns.push('Engulf'); reasons.push('Bull engulf'); }
-  if (eng.some(p => p.type === 'bearish' && p.idx > tfCandles.length - 3)) { sellScore += 2; bearPatterns.push('Engulf'); reasons.push('Bear engulf'); }
+  if (eng.some(p => p.type === 'bearish' && p.idx > tfCandles.length - 3)) { sellScore += 2; bullPatterns.push('Engulf'); reasons.push('Bear engulf'); }
   if (pins.some(p => p.type === 'bullish' && p.idx > tfCandles.length - 3)) { buyScore += 1; bullPatterns.push('Pin'); }
-  if (pins.some(p => p.type === 'bearish' && p.idx > tfCandles.length - 3)) { sellScore += 1; bearPatterns.push('Pin'); }
+  if (pins.some(p => p.type === 'bearish' && p.idx > tfCandles.length - 3)) { sellScore += 1; bullPatterns.push('Pin'); }
   if (sweep?.type === 'bullish') { buyScore += 3; reasons.push('Bull sweep'); bullPatterns.push('Sweep'); }
   if (sweep?.type === 'bearish') { sellScore += 3; reasons.push('Bear sweep'); bearPatterns.push('Sweep'); }
   if (dtb.some(p => p.type === 'double-bottom')) { buyScore += 2; bullPatterns.push('Dbl-Bot'); }
@@ -737,10 +737,11 @@ function generateSignal(tfCandles, allTf) {
     tp = entry - (200 * 0.0001);
   }
 
-  const riskAmt = STATE.equity * (STATE.settings.riskPct / 100);
+  // Target: SL risk = $3.00, TP profit = $4.00 (Fixed target sizing logic)
+  const targetRiskAmt = 3.00;
   const slPips = Math.abs(entry - sl) * 10000;
   const pipValue = 0.10;
-  const rawLots = riskAmt / (slPips * pipValue);
+  const rawLots = targetRiskAmt / (slPips * pipValue);
   const size = Math.max(0.01, Math.round(rawLots * 100) / 100);
   const actualRisk = slPips * pipValue * size;
 
@@ -1097,7 +1098,7 @@ function takeTrade() {
   const t = {
     id: Date.now(), type: sig.signal,
     entry: sig.entry, sl: sig.sl, tp: sig.tp,
-    size: sig.size, riskAmt: sig.riskAmt,
+    size: sig.size, riskAmt: 3.00, // Fixed SL risk $3.00
     status: 'ACTIVE',
     openTime: new Date().toISOString(), pnl: 0,
   };
@@ -1114,11 +1115,11 @@ function checkActiveTrade() {
   const p = STATE.price;
   let closed = false;
   if (t.type === 'BUY') {
-    if (p >= t.tp) { t.status = 'WIN'; t.pnl = (t.tp - t.entry) * 10000 * 0.10 * t.size; closed = true; }
-    else if (p <= t.sl) { t.status = 'LOSS'; t.pnl = (t.sl - t.entry) * 10000 * 0.10 * t.size; closed = true; }
+    if (p >= t.tp) { t.status = 'WIN'; t.pnl = 4.00; closed = true; } // Fixed TP profit $4.00
+    else if (p <= t.sl) { t.status = 'LOSS'; t.pnl = -3.00; closed = true; } // Fixed SL risk -$3.00
   } else {
-    if (p <= t.tp) { t.status = 'WIN'; t.pnl = (t.entry - t.tp) * 10000 * 0.10 * t.size; closed = true; }
-    else if (p >= t.sl) { t.status = 'LOSS'; t.pnl = (t.entry - t.sl) * 10000 * 0.10 * t.size; closed = true; }
+    if (p <= t.tp) { t.status = 'WIN'; t.pnl = 4.00; closed = true; } // Fixed TP profit $4.00
+    else if (p >= t.sl) { t.status = 'LOSS'; t.pnl = -3.00; closed = true; } // Fixed SL risk -$3.00
   }
   if (closed) {
     t.closeTime = new Date().toISOString();
@@ -1168,7 +1169,7 @@ function updateUI() {
     document.getElementById('tp').textContent = sig.tp.toFixed(5);
     document.getElementById('rr').textContent = '1 : ' + sig.rr;
     document.getElementById('size').textContent = sig.size.toFixed(2) + ' lots';
-    document.getElementById('risk').textContent = '$' + sig.riskAmt.toFixed(2);
+    document.getElementById('risk').textContent = '$3.00';
   } else {
     sigType.textContent = 'WAITING';
     sigType.className = 'signal-type WAITING';
@@ -1212,7 +1213,7 @@ function updateUI() {
   document.getElementById('m-avgwin').textContent = '$' + m.avgWin.toFixed(2);
   document.getElementById('m-avgloss').textContent = '$' + m.avgLoss.toFixed(2);
   document.getElementById('m-best').textContent = (m.best >= 0 ? '+$' : '-$') + Math.abs(m.best).toFixed(2);
-  document.getElementById('m-worst').textContent = (m.worst >= 0 ? '+$' : '-$') + Math.abs(m.worst).toFixed(2);
+  document.getElementById('m-worst').textContent = (m.worst >= 0 ? '-$' : '-$') + Math.abs(m.worst).toFixed(2);
   document.getElementById('m-best').style.color = 'var(--green)';
   document.getElementById('m-worst').style.color = 'var(--red)';
   document.getElementById('m-signals').textContent = STATE.signals;
